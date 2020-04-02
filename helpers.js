@@ -1524,8 +1524,10 @@ exports.spotifyPlaySong = (request, response) => {
         `plugin://plugin.audio.spotify/?action=search_tracks&trackid=${searchString}`, kodi)
         .then((ret) => {
             console.log('OpenWindowReturn:', ret);
+            sleep(10);
             kodiExecuteMultipleTimes(kodi.Input.Down, 1)
                 .then((ret) => {
+                    sleep(5);
                     kodi.Input.Select();
                 });
         });
