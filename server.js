@@ -289,6 +289,31 @@ app.all('/broker', exec(Broker.processRequest));
 
 app.use('/settings', SettingsApp.build(exec));
 
+// Netflix
+// Search netflix: http://[THIS_SERVER_IP_ADDRESS]/netflixsearch?q=[text]
+app.all('/netflixsearch', exec(Helper.netflixSearch));
+
+app.all('/netflixmylist', exec(Helper.netflixMyList));
+
+app.all('/netflixnewrelease', exec(Helper.netflixNewRelease));
+
+app.all('/netflixtrendingnow', exec(Helper.netflixTrendingNow));
+
+app.all('/netflixrecommendations', exec(Helper.netflixRecommendations));
+
+//Spotify
+app.all('/spotifysearchartist', exec(Helper.spotifySearchArtist));
+
+app.all('/spotifysearchalbum', exec(Helper.spotifySearchAlbum));
+
+app.all('/spotifysearchplaylist', exec(Helper.spotifySearchPlaylist));
+
+app.all('/spotifysearchsong', exec(Helper.spotifySearchSong));
+
+app.all('/spotifyplayplaylist', exec(Helper.spotifyPlayPlaylist));
+
+app.all('/spotifyplaysong', exec(Helper.spotifyPlaySong));
+
 // error handlers need to be last
 app.use(handleError);
 

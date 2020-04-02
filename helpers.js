@@ -1464,3 +1464,69 @@ exports.listRoutes = function(request, response) {
     response.set('Content-Type', 'text/json');
     response.send(routes);
 };
+
+exports.netflixSearch = (request, response) => { // eslint-disable-line no-unused-vars
+    let searchString = request.query.q.trim();
+    let kodi = request.kodi;
+    return kodiOpenVideoWindow(
+        `plugin://plugin.video.netflix/directory/search/search/${searchString}/`, kodi);
+};
+
+exports.netflixMyList = (request, response) => { // eslint-disable-line no-unused-vars
+    let kodi = request.kodi;
+    return kodiOpenVideoWindow(
+        `plugin://plugin.video.netflix/directory/video_list_sorted/myList/queue/`, kodi);
+};
+
+exports.netflixNewRelease = (request, response) => { // eslint-disable-line no-unused-vars
+    let kodi = request.kodi;
+    return kodiOpenVideoWindow(
+        `plugin://plugin.video.netflix/directory/video_list_sorted/newRelease/newRelease/`, kodi);
+};
+
+exports.netflixTrendingNow = (request, response) => { // eslint-disable-line no-unused-vars
+    let kodi = request.kodi;
+    return kodiOpenVideoWindow(
+        `plugin://plugin.video.netflix/directory/video_list/currentTitles/trendingNow/`, kodi);
+};
+
+exports.netflixRecommendations = (request, response) => { // eslint-disable-line no-unused-vars
+    let kodi = request.kodi;
+    return kodiOpenVideoWindow(
+        `plugin://plugin.video.netflix/directory/recommendations/recommendations/`, kodi);
+};
+
+exports.spotifySearchAlbum = (request, response) => {
+    let searchString = request.query.q.trim();
+    let kodi = request.kodi;
+    return kodiOpenVideoWindow(
+        `plugin://plugin.audio.spotify/?action=search_albums&albumid=${searchString}`, kodi);
+};
+
+exports.spotifySearchPlaylist = (request, response) => {
+    let searchString = request.query.q.trim();
+    let kodi = request.kodi;
+    return kodiOpenVideoWindow(
+        `plugin://plugin.audio.spotify/?action=search_playlists&playlistid=${searchString}`, kodi);
+};
+
+exports.spotifySearchSong = (request, response) => {
+    let searchString = request.query.q.trim();
+    let kodi = request.kodi;
+    return kodiOpenVideoWindow(
+        `plugin://plugin.audio.spotify/?action=search_tracks&trackid=${searchString}`, kodi);
+};
+
+exports.spotifyPlaySong = (request, response) => {
+    let searchString = request.query.q.trim();
+    let kodi = request.kodi;
+    return kodiOpenVideoWindow(
+        `plugin://plugin.audio.spotify/?action=search_tracks&trackid=${searchString}`, kodi)
+        .then((ret) => {
+            console.log('OpenWindowReturn:', ret);
+            kodiExecuteMultipleTimes(kodi.Input.Down, 1)
+                .then((ret) => {
+                    kodi.Input.Select();
+                });
+        });
+};
