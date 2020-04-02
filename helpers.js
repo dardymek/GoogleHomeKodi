@@ -7,6 +7,7 @@ const KodiWindows = require('./kodi-connection/windows.js')();
 
 const AUDIO_PLAYER = 0;
 const VIDEO_PLAYER = 1;
+const NAVI_SLEEP = 5;
 
 // Set option for fuzzy search
 const fuzzySearchOptions = {
@@ -1212,20 +1213,23 @@ exports.kodiPlayChannelByNumber = (request, response) => { // eslint-disable-lin
     return kodiPlayChannel(request, response, pvrFuzzySearchOptions);
 };
 
-exports.kodiSearchYoutube = (request, response) => { // eslint-disable-line no-unused-vars
-    let searchString = request.query.q.trim();
-    let kodi = request.kodi;
 
+//Youtube
+const searchYoutube = (searchString, kodi) => {
     return kodiOpenVideoWindow(
         `plugin://plugin.video.youtube/kodion/search/query?q=${searchString}`, kodi);
 };
 
-exports.kodiPlayYoutube = (request, response) => { // eslint-disable-line no-unused-vars
+exports.kodiSearchYoutube = (request, response) => { // eslint-disable-line no-unused-vars
     let searchString = request.query.q.trim();
-    let maxItems = request.query.max !== undefined ? parseInt(request.query.max) : 15;
     let kodi = request.kodi;
 
-    if (!request.config.youtubeKey) {
+    return searchYoutube(searchString, kodi);
+};
+
+
+const playYoutube = (searchString, maxItems, ytkey, kodi) => {
+    if (!ytkey) {
         throw new Error('Youtube key missing. Configure using the env. variable YOUTUBE_KEY or the kodi-hosts.config.js.');
     }
 
@@ -1233,7 +1237,7 @@ exports.kodiPlayYoutube = (request, response) => { // eslint-disable-line no-unu
     console.log(`Searching youtube for ${searchString}`);
     const opts = {
         maxResults: maxItems,
-        key: request.config.youtubeKey,
+        key: ytkey,
         type: 'video'
     };
 
@@ -1283,6 +1287,17 @@ exports.kodiPlayYoutube = (request, response) => { // eslint-disable-line no-unu
             }));
     });
 };
+
+
+exports.kodiPlayYoutube = (request, response) => { // eslint-disable-line no-unused-vars
+    let searchString = request.query.q.trim();
+    let maxItems = request.query.max !== undefined ? parseInt(request.query.max) : 15;
+    let ytkey = request.config.youtubeKey;
+    let kodi = request.kodi;
+
+    return playYoutube(searchString, maxItems, ytkey, kodi)
+};
+
 
 exports.kodiShutdown = (request) => request.kodi.System.Shutdown(); // eslint-disable-line new-cap
 exports.kodiHibernate = (request) => request.kodi.System.Hibernate(); // eslint-disable-line new-cap
@@ -1465,70 +1480,338 @@ exports.listRoutes = function(request, response) {
     response.send(routes);
 };
 
+
+const netflixSearch = (str, kodi) => {
+    let searchString = str.trim();
+    return kodiOpenVideoWindow(
+        `plugin://plugin.video.netflix/directory/search/search/${searchString}/`, kodi);
+}
+
+
+const netflixOpen = (str, kodi) => {
+    let str2 = str.replace(" ", "").toLowerCase();
+    if (str2.search("mylist") > -1) {
+        return kodiOpenVideoWindow(
+            `plugin://plugin.video.netflix/directory/video_list_sorted/myList/queue/`, kodi);
+    }
+
+    if (str2.search("new") > -1) {
+        return kodiOpenVideoWindow(
+            `plugin://plugin.video.netflix/directory/video_list_sorted/newRelease/newRelease/`, kodi);
+    }
+
+    if (str2.search("trending") > -1 || str2.search("popular") > -1) {
+        return kodiOpenVideoWindow(
+            `plugin://plugin.video.netflix/directory/video_list/currentTitles/trendingNow/`, kodi);
+    }
+
+    if (str2.search("recommendation") > -1 || str2.search("recommend") > -1) {
+        return kodiOpenVideoWindow(
+            `plugin://plugin.video.netflix/directory/recommendations/recommendations/`, kodi);
+    }
+    //default my list
+    return kodiOpenVideoWindow(
+        `plugin://plugin.video.netflix/directory/video_list_sorted/myList/queue/`, kodi);
+}
+
+
 exports.netflixSearch = (request, response) => { // eslint-disable-line no-unused-vars
     let searchString = request.query.q.trim();
     let kodi = request.kodi;
-    return kodiOpenVideoWindow(
-        `plugin://plugin.video.netflix/directory/search/search/${searchString}/`, kodi);
+    return netflixSearch(searchString, kodi);
 };
 
 exports.netflixMyList = (request, response) => { // eslint-disable-line no-unused-vars
     let kodi = request.kodi;
-    return kodiOpenVideoWindow(
-        `plugin://plugin.video.netflix/directory/video_list_sorted/myList/queue/`, kodi);
+    return netflixOpen("mylist", kodi);
 };
 
 exports.netflixNewRelease = (request, response) => { // eslint-disable-line no-unused-vars
     let kodi = request.kodi;
-    return kodiOpenVideoWindow(
-        `plugin://plugin.video.netflix/directory/video_list_sorted/newRelease/newRelease/`, kodi);
+    return netflixOpen("newRelease", kodi);
 };
 
 exports.netflixTrendingNow = (request, response) => { // eslint-disable-line no-unused-vars
     let kodi = request.kodi;
-    return kodiOpenVideoWindow(
-        `plugin://plugin.video.netflix/directory/video_list/currentTitles/trendingNow/`, kodi);
+    return netflixOpen("trendingNow", kodi);
 };
 
 exports.netflixRecommendations = (request, response) => { // eslint-disable-line no-unused-vars
     let kodi = request.kodi;
-    return kodiOpenVideoWindow(
-        `plugin://plugin.video.netflix/directory/recommendations/recommendations/`, kodi);
+    return netflixOpen("Recommendations", kodi);
 };
+
+
+const spotifySearch = (what, str, kodi) => {
+    let searchString = str.trim();
+    let what2 = what.replace(" ", "").toLowerCase();
+    if (what2.search("album") > -1) {
+        return kodiOpenVideoWindow(
+            `plugin://plugin.audio.spotify/?action=search_albums&albumid=${searchString}`, kodi);
+    }
+
+    if (what2.search("playlist") > -1) {
+        return kodiOpenVideoWindow(
+            `plugin://plugin.audio.spotify/?action=search_playlists&playlistid=${searchString}`, kodi);
+    }
+
+    return kodiOpenVideoWindow(
+        `plugin://plugin.audio.spotify/?action=search_tracks&trackid=${searchString}`, kodi);
+
+}
+
+
+const spotifyPlay = (what, str, kodi) => {
+    return spotifySearch(what, str, kodi)
+        .then(() => sleep(10)
+        .then(() => kodiExecuteMultipleTimes(kodi.Input.Down, 1)
+        .then(() => sleep(NAVI_SLEEP)
+        .then(() => kodi.Input.Select()))));
+}
+
 
 exports.spotifySearchAlbum = (request, response) => {
     let searchString = request.query.q.trim();
     let kodi = request.kodi;
-    return kodiOpenVideoWindow(
-        `plugin://plugin.audio.spotify/?action=search_albums&albumid=${searchString}`, kodi);
+    return spotifySearch("album", searchString, kodi);
 };
 
 exports.spotifySearchPlaylist = (request, response) => {
     let searchString = request.query.q.trim();
     let kodi = request.kodi;
-    return kodiOpenVideoWindow(
-        `plugin://plugin.audio.spotify/?action=search_playlists&playlistid=${searchString}`, kodi);
+    return spotifySearch("playlist", searchString, kodi);
 };
 
 exports.spotifySearchSong = (request, response) => {
     let searchString = request.query.q.trim();
     let kodi = request.kodi;
-    return kodiOpenVideoWindow(
-        `plugin://plugin.audio.spotify/?action=search_tracks&trackid=${searchString}`, kodi);
+    return spotifySearch("track", searchString, kodi);
 };
+
 
 exports.spotifyPlaySong = (request, response) => {
     let searchString = request.query.q.trim();
     let kodi = request.kodi;
-    return kodiOpenVideoWindow(
-        `plugin://plugin.audio.spotify/?action=search_tracks&trackid=${searchString}`, kodi)
+    return spotifyPlay("song", searchString, kodi);
+};
+
+
+const doAnythingSpotify = (str, kodi) => {
+    console.log(`doAnythingSpotify: text: ${str}`);
+    let str2 = str;
+    let index = -1;
+    let searchString = "";
+
+    str2 = str2.replace(" on spotify", "");
+    str2 = str2.replace(" in spotify", "");
+    str2 = str2.replace("spotify", "");
+    console.log(`doAnythingSpotify: text: ${str2}`);
+
+    // we are doing on what
+    let what = "song";
+    switch (true) {
+        case (str2.search("playlist") > -1):
+            what = "playlist"
+            break;
+        case (str2.search("album") > -1):
+            what = "album"
+            break;
+    }
+    str2 = str2.replace("song", "");
+    str2 = str2.replace("track", "");
+    str2 = str2.replace("playlist", "");
+    str2 = str2.replace("album", "");
+
+    index = str2.search("search for");
+    if (index >= 0 && index < 5) {
+        str2 = str2.replace("search for ", "");
+
+        searchString = str2.trim();
+        console.log(`doAnythingSpotify: search for: ${searchString}`);
+        return spotifySearch(what, searchString, kodi);
+    }
+
+    index = str2.search("play ");
+    if (index >=0 && index < 5) {
+        str2 = str2.replace("play ", "");
+        searchString = str2.trim();
+        console.log(`doAnythingSpotify: open: ${searchString}`);
+        return spotifyPlay(what, searchString, kodi);
+    }
+
+    return Promise.resolve();
+}
+
+
+const doAnythingNetflix = (str, kodi) => {
+    console.log(`doAnythingNetflix: text: ${str}`);
+    let space_str = ' ' + str + ' ';
+    let str2 = str;
+    let index = -1;
+
+    str2 = str2.replace(" on netflix", "");
+    str2 = str2.replace(" in netflix", "");
+    str2 = str2.replace("netflix", "");
+    console.log(`doAnythingNetflix: text: ${str2}`);
+
+    index = str2.search("search for");
+    if (index >= 0 && index < 5) {
+        // search for series/movie/movies $ in/on Netlix
+        str2 = str2.replace("search for series", "");
+        str2 = str2.replace("search for movie", "");
+        str2 = str2.replace("search for movies", "");
+        str2 = str2.replace("search for ", "");
+
+        console.log(`doAnythingNetflix: search for: ${str2}`);
+        let searchString = str2.trim();
+        return netflixSearch(searchString, kodi);
+    }
+
+    index = str2.search("open ");
+    if (index >=0 && index < 5) {
+        str2 = str2.replace("open ", "");
+        console.log(`doAnythingNetflix: open: ${str2}`);
+        return netflixOpen(str2, kodi);
+    }
+
+    return Promise.resolve();
+};
+
+const buildNaviCommand = (what, command) => {
+    if (what === "select") {
+        return "kodi.Input.Select().then(() => sleep(NAVI_SLEEP).then(" + command + "))";
+    } else {
+        return "kodiExecuteMultipleTimes(kodi.Input." + what + ", NUMBER).then(() => sleep(NAVI_SLEEP).then(" + command + "))";
+    }
+}
+
+
+const doAnythingNavi = (str, kodi) => {
+    console.log(`doAnythingNavi: text: ${str}`);
+    let str2 = str;
+    let command = "";
+
+    let words = str2.split(" ");
+    let last_number = 1;
+    for(let i = words.length - 1; i >= 0; i--){
+        console.log(`doAnythingNavi: words[${i}]: ${words[i]}`);
+        if (!isNaN(words[i])) {
+            //number
+            //last_number = parseInt(words[i]);
+            command = command.replace("NUMBER", words[i]);
+            continue;
+        } else {
+            command = command.replace("NUMBER", "1");
+        }
+
+        switch (words[i]) {
+            case "up":
+                command = buildNaviCommand("Up", command);
+                break;
+            case "down":
+                command = buildNaviCommand("Down", command);
+                break;
+            case "left":
+                command = buildNaviCommand("Left", command);
+                break;
+            case "right":
+                command = buildNaviCommand("Right", command);
+                break;
+            case "back":
+                command = buildNaviCommand("Back", command);
+                break;
+            case "select":
+                command = buildNaviCommand("select", command);
+                break;
+        }
+    }
+    console.log(`doAnythingNavi: command: ${command}`);
+    return eval(command);
+};
+
+const playOnYoutube = (searchString, kodi) => {
+    return searchYoutube(searchString, kodi)
         .then((ret) => {
             console.log('OpenWindowReturn:', ret);
-            sleep(10);
-            kodiExecuteMultipleTimes(kodi.Input.Down, 1)
-                .then((ret) => {
-                    sleep(5);
-                    kodi.Input.Select();
-                });
+            sleep(20)
+            .then(() => kodiExecuteMultipleTimes(kodi.Input.Down, 1)
+            .then(() => sleep(NAVI_SLEEP)
+            .then(() => kodi.Input.Select())));
         });
+};
+
+const doAnythingYoutube = (str, kodi) => {
+    console.log(`doAnythingYoutube: text: ${str}`);
+    let space_str = ' ' + str + ' ';
+    let str2 = str;
+    let index = -1;
+    let searchString = "";
+
+    str2 = str2.replace(" on youtube", "");
+    str2 = str2.replace(" in youtube", "");
+    str2 = str2.replace("youtube", "");
+    console.log(`doAnythingYoutube: text: ${str2}`);
+
+    index = str2.search("search for");
+    if (index >= 0 && index < 5) {
+        //search for $ in/on youtube
+        str2 = str2.replace("search for ", "");
+
+        console.log(`doAnythingYoutube: search for: ${str2}`);
+        searchString = str2.trim();
+        return searchYoutube(searchString, kodi);
+    }
+
+    index = str2.search("play");
+    if (index >= 0 && index < 5) {
+        //play $ in/on youtube
+        str2 = str2.replace("play ", "");
+
+        console.log(`doAnythingYoutube: play: ${str2}`);
+        searchString = str2.trim();
+        return playOnYoutube(searchString, kodi);
+    }
+
+    return Promise.resolve();
+};
+
+
+exports.doAnything = (request, response) => {
+    tryActivateTv(request, response);
+    let kodi = request.kodi;
+    let str = request.query.q.trim().toLowerCase();
+    console.log(`doAnything: text: ${str}`);
+    let space_str = ' ' + str + ' ';
+    let words = str.split(" ");
+
+    switch (true) {
+        case str.search("netflix") > -1:
+            return doAnythingNetflix(str, kodi);
+            break;
+        case str.indexOf("spotify") > -1:
+            return doAnythingSpotify(str, kodi);
+            break;
+        case str.indexOf("youtube") > -1:
+            return doAnythingYoutube(str, kodi);
+            break;
+        case (words[0] === "select" || words[1] === "select" ||
+                ((words[0] === "go" || words[1] === "go" || words[0] === "come" || words[1] === "come") &&
+                    (space_str.indexOf(" back ") > -1 ||
+                    space_str.indexOf(" up ") > -1 || space_str.indexOf(" down ") > -1 ||
+                    space_str.indexOf(" left ") > -1 || space_str.indexOf(" right ") > -1 ))):
+            return doAnythingNavi(str, kodi);
+            break;
+        case ((words[0] === "go" || words[1] === "go") && space_str.indexOf(" home ") > -1):
+            return kodi.Input.Home();
+            break;
+        case (str.indexOf("context menu") > -1 || str.indexOf("menu context") > -1):
+            return kodi.Input.ContextMenu();
+            break;
+        case (str.indexOf("show info") > -1 || str.indexOf("show information") > -1):
+            return kodi.Input.Info();
+            break;
+        default:
+    }
+
+    return Promise.resolve();
 };

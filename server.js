@@ -314,6 +314,9 @@ app.all('/spotifyplayplaylist', exec(Helper.spotifyPlayPlaylist));
 
 app.all('/spotifyplaysong', exec(Helper.spotifyPlaySong));
 
+// Do anything
+app.all('/doanything', exec(Helper.doAnything));
+
 // error handlers need to be last
 app.use(handleError);
 
