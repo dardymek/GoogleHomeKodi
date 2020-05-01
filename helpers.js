@@ -114,8 +114,8 @@ const playTvShowEpisodes = (request, episodes, isShuffled = false) => {
         }));
 };
 
-const playMusicGenre = (request, genre) => {
-    return request.kodi.Player.Open({ // eslint-disable-line new-cap
+const playMusicGenre = (genre, kodi) => {
+    return kodi.Player.Open({ // eslint-disable-line new-cap
         item: {
             genreid: genre.genreid
         },
@@ -137,13 +137,12 @@ const selectRandomItem = (items) => {
     return Promise.resolve(randomItem);
 };
 
-const fuzzySearchBestMatch = (items, needle, optionalTargetProperties) => {
+const fuzzySearchBestMatch = (items, needle, optionalProperties) => {
 
     let options = fuzzySearchOptions;
 
-    if (optionalTargetProperties) {
-        options = Object.assign({}, options);
-        options.keys = optionalTargetProperties;
+    if (optionalProperties) {
+        options = optionalProperties;
     }
 
     let cleanNeedle = needle
@@ -228,6 +227,18 @@ const getFilteredMovies = (request, param) => {
         });
 };
 
+const getDirecoryContents = (kodi, path) => {
+    return kodi.Files.GetDirectory({ // eslint-disable-line new-cap
+        directory: path
+    })
+        .then((kodiResponse) => {
+            if (!(kodiResponse && kodiResponse.result && kodiResponse.result.files && kodiResponse.result.files.length > 0)) {
+                throw new Error('directory was empty');
+            }
+            return kodiResponse.result.files;
+        });
+};
+
 const kodiFindMovie = (request, movieTitle) => {
     return request.kodi.VideoLibrary
         .GetMovies({ // eslint-disable-line new-cap
@@ -238,7 +249,9 @@ const kodiFindMovie = (request, movieTitle) => {
                 throw new Error('Your kodi library does not contain a single movie!');
             }
 
-            return fuzzySearchBestMatch(movies.result.movies, movieTitle, ['label', 'originaltitle']);
+            let options = Object.assign({}, fuzzySearchOptions);
+            options.keys = ['label', 'originaltitle'];
+            return fuzzySearchBestMatch(movies.result.movies, movieTitle, options);
         });
 };
 
@@ -365,7 +378,7 @@ const kodiOpenVideoWindow = (file, Kodi) => {
     return Kodi.GUI.ActivateWindow(params); // eslint-disable-line new-cap
 };
 
-const kodiFindSong = (songTitle, Kodi) => {
+const kodiFindSong = (songTitle, Kodi, options) => {
 
     return Kodi.AudioLibrary.GetSongs() // eslint-disable-line new-cap
         .then((songs) => {
@@ -373,11 +386,11 @@ const kodiFindSong = (songTitle, Kodi) => {
                 throw new Error('Your kodi library does not contain a single song!');
             }
 
-            return fuzzySearchBestMatch(songs.result.songs, songTitle);
+            return fuzzySearchBestMatch(songs.result.songs, songTitle, options);
         });
 };
 
-const kodiFindArtist = (artistTitle, Kodi) => {
+const kodiFindArtist = (artistTitle, Kodi, options) => {
 
     return Kodi.AudioLibrary.GetArtists() // eslint-disable-line new-cap
         .then((artists) => {
@@ -385,18 +398,26 @@ const kodiFindArtist = (artistTitle, Kodi) => {
                 throw new Error('Your kodi library does not contain a single artist!');
             }
 
-            return fuzzySearchBestMatch(artists.result.artists, artistTitle);
+            return fuzzySearchBestMatch(artists.result.artists, artistTitle, options);
         });
-};
+}
 
-const kodiFindAlbum = (albumTitle, Kodi) => {
+const kodiFindPlaylist = (playlistName, Kodi, options) => {
+    return getDirecoryContents(Kodi, `special://profile/playlists/music`)
+        .then((lists) => { return fuzzySearchBestMatch(lists, playlistName, options);})
+        .catch(() =>
+            getDirecoryContents(Kodi, `special://profile/playlists/video`)
+                .then((lists) => { return fuzzySearchBestMatch(lists, playlistName, options);}))
+}
+
+const kodiFindAlbum = (albumTitle, Kodi, options) => {
     return Kodi.AudioLibrary.GetAlbums() // eslint-disable-line new-cap
         .then((albums) => {
             if (!(albums && albums.result && albums.result.albums && albums.result.albums.length > 0)) {
                 throw new Error('Your kodi library does not contain a single album!');
             }
 
-            return fuzzySearchBestMatch(albums.result.albums, albumTitle);
+            return fuzzySearchBestMatch(albums.result.albums, albumTitle, options);
         });
 };
 
@@ -420,18 +441,6 @@ const kodiGetMovieGenres = (Kodi) => {
                 throw new Error('Your kodi library does not contain a single genre!');
             }
             return genres.result.genres;
-        });
-};
-
-const getDirecoryContents = (kodi, path) => {
-    return kodi.Files.GetDirectory({ // eslint-disable-line new-cap
-        directory: path
-    })
-        .then((kodiResponse) => {
-            if (!(kodiResponse && kodiResponse.result && kodiResponse.result.files && kodiResponse.result.files.length > 0)) {
-                throw new Error('directory was empty');
-            }
-            return kodiResponse.result.files;
         });
 };
 
@@ -580,14 +589,18 @@ const kodiGoTo = (Kodi, gotoCommand) => {
     ]);
 };
 
-exports.kodiPlayPause = (request, response) => { // eslint-disable-line no-unused-vars
+const playPause = (Kodi) => { // eslint-disable-line no-unused-vars
     console.log('Play/Pause request received');
-    let Kodi = request.kodi;
 
     return Promise.all([
         Kodi.Player.PlayPause({ playerid: AUDIO_PLAYER }), // eslint-disable-line new-cap
         Kodi.Player.PlayPause({ playerid: VIDEO_PLAYER }) // eslint-disable-line new-cap
     ]);
+};
+
+exports.kodiPlayPause = (request, response) => {
+    let Kodi = request.kodi;
+    return playPause(Kodi);
 };
 
 // Navigation Controls
@@ -671,10 +684,11 @@ exports.kodiNavHome = (request, response) => { // eslint-disable-line no-unused-
 };
 
 const showWindow = (kodi, window) => {
-    return kodi.GUI.ActivateWindow({ // eslint-disable-line new-cap
+    return fuzzySearchBestMatch(KodiWindows, window)
+        .then((window) => kodi.GUI.ActivateWindow({ // eslint-disable-line new-cap
         'window': window.section.toLowerCase(),
         'parameters': [window.path]
-    });
+    }));
 };
 
 exports.kodiShowWindow = (request, response) => { // eslint-disable-line no-unused-vars
@@ -682,15 +696,11 @@ exports.kodiShowWindow = (request, response) => { // eslint-disable-line no-unus
 
     const query = request.query.q;
 
-    return fuzzySearchBestMatch(KodiWindows, query)
-        .then((window) => showWindow(request.kodi, window));
+    return showWindow(request.kodi, query);
 };
 
 // Set subtitles
-exports.kodiSetSubs = (request, response) => { // eslint-disable-line no-unused-vars
-    let Kodi = request.kodi;
-    const setsubs = request.query.q.trim();
-
+const setSubs = (setsubs, Kodi) => { // eslint-disable-line no-unused-vars
     console.log(`Change subtitles request received - ${setsubs}`);
 
     if (setsubs === 'previous' || setsubs === 'next' || setsubs === 'on' || setsubs === 'off') {
@@ -698,6 +708,13 @@ exports.kodiSetSubs = (request, response) => { // eslint-disable-line no-unused-
     }
 
     throw new Error('unknown subs command', setsubs);
+};
+
+exports.kodiSetSubs = (request, response) => {
+    let Kodi = request.kodi;
+    const setsubs = request.query.q.trim();
+
+    return setSubs(setsubs, Kodi);
 };
 
 // Set subtitles on
@@ -822,12 +839,7 @@ exports.kodiSeekBackwardMinutes = (request, response) => { // eslint-disable-lin
 };
 
 // Play Song
-exports.kodiPlaySong = (request, response) => { // eslint-disable-line no-unused-vars
-    tryActivateTv(request, response);
-
-    let songTitle = request.query.q;
-    let Kodi = request.kodi;
-
+const playSong = (songTitle, Kodi) => {
     console.log(`Song request received to play "${songTitle}"`);
     return kodiFindSong(songTitle, Kodi)
         .then((data) => Kodi.Player.Open({ // eslint-disable-line new-cap
@@ -837,15 +849,18 @@ exports.kodiPlaySong = (request, response) => { // eslint-disable-line no-unused
         }));
 };
 
-// Play Artist
-exports.kodiPlayArtist = (request, response) => { // eslint-disable-line no-unused-vars
+exports.kodiPlaySong = (request, response) => { // eslint-disable-line no-unused-vars
     tryActivateTv(request, response);
 
-    let artistTitle = request.query.q;
+    let songTitle = request.query.q;
     let Kodi = request.kodi;
 
-    console.log(`Artist request received to play "${artistTitle}"`);
-    return kodiFindArtist(artistTitle, Kodi)
+    return playSong(songTitle, Kodi);
+};
+
+// Play Artist
+const playArtist = (artistTitle, Kodi, options) => {
+    return kodiFindArtist(artistTitle, Kodi, options)
         .then((data) => Kodi.Player.Open({ // eslint-disable-line new-cap
             item: {
                 artistid: data.artistid
@@ -856,7 +871,41 @@ exports.kodiPlayArtist = (request, response) => { // eslint-disable-line no-unus
         }));
 };
 
+exports.kodiPlayArtist = (request, response) => { // eslint-disable-line no-unused-vars
+    tryActivateTv(request, response);
+
+    let artistTitle = request.query.q;
+    let Kodi = request.kodi;
+    return playArtist(artistTitle, Kodi);
+};
+
+// Play Playlist
+const playPlaylist = (playlistTitle, Kodi, options) => {
+    return kodiFindPlaylist(playlistTitle, Kodi, options)
+        .then((playlist) => Kodi.Player.Open({ // eslint-disable-line new-cap
+            item: {
+                directory: playlist.file
+            }
+        }));
+};
+exports.kodiPlayPlaylist = (request, response) => { // eslint-disable-line no-unused-vars
+    tryActivateTv(request, response);
+    let playlistTitle = request.query.q;
+    let Kodi = request.kodi;
+    console.log(`Playlist request received to play "${playlistTitle}"`);
+    return playPlaylist(playlistTitle, Kodi);
+};
+
 // Play Album
+const playAlbum = (albumTitle, Kodi, options) => {
+    return kodiFindAlbum(albumTitle, Kodi, options)
+        .then((data) => Kodi.Player.Open({ // eslint-disable-line new-cap
+            item: {
+                albumid: data.albumid
+            }
+        }));
+};
+
 exports.kodiPlayAlbum = (request, response) => { // eslint-disable-line no-unused-vars
     tryActivateTv(request, response);
 
@@ -864,12 +913,7 @@ exports.kodiPlayAlbum = (request, response) => { // eslint-disable-line no-unuse
     let Kodi = request.kodi;
 
     console.log(`Album request received to play "${albumTitle}"`);
-    return kodiFindAlbum(albumTitle, Kodi)
-        .then((data) => Kodi.Player.Open({ // eslint-disable-line new-cap
-            item: {
-                albumid: data.albumid
-            }
-        }));
+    return playAlbum(albumTitle, Kodi);
 };
 
 // Player Control
@@ -907,14 +951,18 @@ exports.kodiPlayPlaylist = (request, response) => { // eslint-disable-line no-un
         }));
 };
 
-exports.kodiStop = (request, response) => { // eslint-disable-line no-unused-vars
+const kodiStop = (Kodi) => { // eslint-disable-line no-unused-vars
     console.log('Stop request received');
-    let Kodi = request.kodi;
 
     return Promise.all([
         Kodi.Player.Stop({ playerid: AUDIO_PLAYER }), // eslint-disable-line new-cap
         Kodi.Player.Stop({ playerid: VIDEO_PLAYER }) // eslint-disable-line new-cap
     ]);
+};
+
+exports.kodiStop = (request, response) => {
+    let Kodi = request.kodi;
+    return kodiStop(Kodi);
 };
 
 exports.kodiMuteToggle = (request, response) => { // eslint-disable-line no-unused-vars
@@ -1029,6 +1077,7 @@ exports.kodiPlayFile = (request, response) => {
     return sleep(seconds)
         .then(() => playFile(request, file));
 };
+
 exports.kodiPlayMovie = (request, response) => {
     tryActivateTv(request, response);
 
@@ -1151,10 +1200,7 @@ exports.kodiOpenTvshow = (request) => {
         .then((tvShow) => kodiOpenVideoWindow(tvShow.file, request.kodi));
 };
 
-exports.kodiOpenMovie = (request) => {
-    let movieTitle = request.query.q;
-    let kodi = request.kodi;
-
+const openMovie = (movieTitle, kodi) => {
     return kodi.Input.Home() // eslint-disable-line new-cap
         .then(() => kodi.Input.Back()) // eslint-disable-line new-cap
         .then(() => kodiFindMovie(request, movieTitle))
@@ -1172,6 +1218,13 @@ exports.kodiOpenMovie = (request) => {
                 .then(() => kodi.Input.Info()) // eslint-disable-line new-cap
             ));
 };
+
+exports.kodiOpenMovie = (request) => {
+    let movieTitle = request.query.q;
+    let kodi = request.kodi;
+
+    return openMovie(movieTitle, kodi);
+}
 
 // Start a full library scan
 exports.kodiScanLibrary = (request) => request.kodi.VideoLibrary.Scan(); // eslint-disable-line new-cap
@@ -1304,6 +1357,11 @@ exports.kodiHibernate = (request) => request.kodi.System.Hibernate(); // eslint-
 exports.kodiReboot = (request) => request.kodi.System.Reboot(); // eslint-disable-line new-cap
 exports.kodiSuspend = (request) => request.kodi.System.Suspend(); // eslint-disable-line new-cap
 
+const playMusicByGenre = (genre, kodi, options) => {
+    return kodiGetMusicGenres(kodi)
+        .then((genres) => fuzzySearchBestMatch(genres, genre, options))
+        .then((genre) => playMusicGenre(genre, kodi));
+}
 
 exports.kodiPlayMusicByGenre = (request) => {
 
@@ -1312,9 +1370,7 @@ exports.kodiPlayMusicByGenre = (request) => {
 
     console.log('playback of a music genre requested:', requestedGenre);
 
-    return kodiGetMusicGenres(Kodi)
-        .then((genres) => fuzzySearchBestMatch(genres, requestedGenre))
-        .then((genre) => playMusicGenre(request, genre));
+    return playMusicGenre(requestedGenre, Kodi);
 
 };
 
@@ -1373,11 +1429,13 @@ exports.kodiExecuteAddon = (request) => {
 
     let kodi = request.kodi;
     let requestedAddon = request.query.q;
+    let options = Object.assign({}, fuzzySearchOptions);
+    options.keys = ['name']
 
     console.log('requested execution of an addon:', requestedAddon);
     return kodiGetAddons(kodi)
         .then((allAddons) => removeNotExecuteableAddons(allAddons))
-        .then((addons) => fuzzySearchBestMatch(addons, requestedAddon, ['name']))
+        .then((addons) => fuzzySearchBestMatch(addons, requestedAddon, options))
         .then((addon) => executeAddon(kodi, addon));
 };
 
@@ -1678,10 +1736,15 @@ const doAnythingNetflix = (str, kodi) => {
 };
 
 const buildNaviCommand = (what, command) => {
-    if (what === "select") {
-        return "kodi.Input.Select().then(() => sleep(NAVI_SLEEP).then(" + command + "))";
-    } else {
-        return "kodiExecuteMultipleTimes(kodi.Input." + what + ", NUMBER).then(() => sleep(NAVI_SLEEP).then(" + command + "))";
+    switch (what) {
+       case "select":
+           return "kodi.Input.Select().then(() => sleep(NAVI_SLEEP).then(" + command + "))";
+           break;
+       case "home":
+           return "kodi.Input.Home().then(() => sleep(NAVI_SLEEP).then(" + command + "))";
+           break;
+       default:
+           return "kodiExecuteMultipleTimes(kodi.Input." + what + ", NUMBER).then(() => sleep(NAVI_SLEEP).then(" + command + "))";
     }
 }
 
@@ -1722,6 +1785,9 @@ const doAnythingNavi = (str, kodi) => {
                 break;
             case "select":
                 command = buildNaviCommand("select", command);
+                break;
+            case "home":
+                command = buildNaviCommand("home", command);
                 break;
         }
     }
@@ -1775,6 +1841,101 @@ const doAnythingYoutube = (str, kodi) => {
     return Promise.resolve();
 };
 
+const playAnything = (searchString, kodi, threshold) => {
+    let options = Object.assign({}, fuzzySearchOptions);
+    let str = searchString.replace("the ","")
+
+    if (threshold) {
+        options.threshold = threshold;
+        console.log(`playAnything threshold: ${threshold}`)
+    }
+
+    return playPlaylist(str, kodi, options)
+        .catch(error => {
+            // console.error(error);
+            console.log(`doAnythingPlay no playlist`);
+            str = str.replace("mantras","mantra")
+            return playMusicByGenre(str, kodi, options)
+                .catch(error => {
+                    // console.error(error);
+                    console.log(`doAnythingPlay no genre`);
+                    return playArtist(searchString, kodi, options)
+                        .catch(error => {
+                            console.log(`doAnythingPlay no artist`);
+                            return playAlbum(searchString, kodi, options)
+                                .catch(error => {
+                                    console.log(`doAnythingPlay no album`);
+                                    return playSong(searchString, kodi, options);
+                                });
+                        });
+                });
+        });
+}
+
+const doAnythingPlay = (str, kodi) => {
+    console.log(`doAnythingYoutube: text: ${str}`);
+    let str2 = str;
+    let space_str = ' ' + str + ' ';
+    let searchString = "";
+
+    str2 = str2.replace("play", "");
+    switch (true) {
+        case space_str.search(" album ") > -1:
+            str2 = str2.replace("play", "");
+            str2 = str2.replace("album", "");
+            searchString = str2.trim();
+            console.log(`doAnythingPlay album: ${searchString}`);
+            return playAlbum(searchString, kodi);
+            break;
+        case space_str.search(" playlist ") > -1:
+        case space_str.search(" list ") > -1:
+            str2 = str2.replace("play", "");
+            str2 = str2.replace("playlist", "");
+            str2 = str2.replace("list", "");
+            searchString = str2.trim();
+            console.log(`doAnythingPlay playlist: ${searchString}`);
+            return playPlaylist(searchString, kodi);
+            break;
+        case space_str.search(" genre ") > -1:
+        case space_str.search(" music ") > -1:
+        case space_str.search(" songs ") > -1:
+            str2 = str2.replace("the genre", "");
+            str2 = str2.replace(" of ", "");
+            str2 = str2.replace(" the ", "");
+            str2 = str2.replace("genre", "");
+            str2 = str2.replace("music", "");
+            return playMusicByGenre(searchString, kodi);
+            break;
+        case space_str.search(" song ") > -1:
+        case space_str.search(" track ") > -1:
+            str2 = str2.replace("play", "");
+            str2 = str2.replace("song", "");
+            str2 = str2.replace("track", "");
+            searchString = str2.trim();
+            console.log(`doAnythingPlay song: ${searchString}`);
+            return playSong(searchString, kodi);
+            break;
+        case str.search("artist") > -1:
+        case str.search("performer") > -1:
+            str2 = str2.replace("play", "");
+            str2 = str2.replace("artist", "");
+            str2 = str2.replace("performer", "");
+            searchString = str2.trim();
+            console.log(`doAnythingPlay artist: ${searchString}`);
+            return playArtist(searchString, kodi);
+            break;
+        default:
+            str2 = str2.replace("play", "");
+            searchString = str2.trim();
+            console.log(`doAnythingPlay: ${searchString}`);
+            return playAnything(searchString, kodi, 0.1)
+                .catch(error => {
+                    console.error(error);
+                    console.log(`doAnythingPlay no perfect Match`);
+                    return playAnything(searchString, kodi);
+                });
+    }
+}
 
 exports.doAnything = (request, response) => {
     tryActivateTv(request, response);
@@ -1794,21 +1955,82 @@ exports.doAnything = (request, response) => {
         case str.indexOf("youtube") > -1:
             return doAnythingYoutube(str, kodi);
             break;
-        case (words[0] === "select" || words[1] === "select" ||
-                ((words[0] === "go" || words[1] === "go" || words[0] === "come" || words[1] === "come") &&
-                    (space_str.indexOf(" back ") > -1 ||
-                    space_str.indexOf(" up ") > -1 || space_str.indexOf(" down ") > -1 ||
-                    space_str.indexOf(" left ") > -1 || space_str.indexOf(" right ") > -1 ))):
-            return doAnythingNavi(str, kodi);
+        case str === "next":
+            return kodiGoTo(kodi, "next");
             break;
-        case ((words[0] === "go" || words[1] === "go") && space_str.indexOf(" home ") > -1):
+        case str === "previous":
+            return kodiGoTo(kodi, "previous").done(() => kodiGoTo(kodi, "previous"));
+            break;
+        case str === "from the beginning":
+        case str === "beginning":
+            return kodiGoTo(kodi, "previous");
+            break;
+        case str === "continue":
+        case str === "play":
+        case str === "pause":
+        case str === "stop":
+            console.log(`PlayPause: ${str}`);
+            return playPause(kodi);
+            break;
+        case str === "finish":
+        case str === "exit":
+            console.log(`Stop: ${str}`);
+            return kodiStop(kodi);
+            break;
+        case str === "enable subtitles":
+            return setSubs("on", kodi);
+            break;
+        case str === "disable subtitles":
+            return setSubs("off", kodi);
+            break;
+        case str.indexOf("set volume") > -1:
+            let volume = str.replace(/\D/g, "");
+            console.log(`Set volume: ${volume}`);
+            return setVolume(kodi, volume);
+            break;
+        case str.indexOf("go home") > -1:
+        case str.indexOf("home page") > -1:
+        case str.indexOf("main page") > -1:
             return kodi.Input.Home();
             break;
-        case (str.indexOf("context menu") > -1 || str.indexOf("menu context") > -1):
+        case words[0] === "select":
+        case words[1] === "select":
+        case (words[0] === "go" || words[1] === "go" || words[0] === "come" || words[1] === "come") &&
+                    (space_str.indexOf(" back ") > -1 ||
+                    space_str.indexOf(" up ") > -1 || space_str.indexOf(" down ") > -1 ||
+                    space_str.indexOf(" left ") > -1 || space_str.indexOf(" right ") > -1 ):
+            return doAnythingNavi(str, kodi);
+            break;
+        case str.indexOf("context menu") > -1:
+        case str.indexOf("menu context") > -1:
+            console.log("Context menu");
             return kodi.Input.ContextMenu();
             break;
-        case (str.indexOf("show info") > -1 || str.indexOf("show information") > -1):
+        case (space_str.indexOf("turn on") > -1 && space_str.indexOf("tv") > -1):
+            console.log("Turn on TV");
+            return tryActivateTv(request, response);
+            break;
+        case (str.indexOf("turn off") > -1 && space_str.indexOf("tv") > -1):
+            console.log("Turn off TV");
+            return kodiStandbyTv(request, response);
+            break;
+        case str.indexOf("show info") > -1:
+        case str.indexOf("show information") > -1:
+            console.log("Show info");
             return kodi.Input.Info();
+            break;
+        case str.search("play.+movie") > -1:
+            str = str.replace("play ","");
+            str = str.replace(" movie","");
+            return openMovie(str.trim(), kodi); 
+            break;
+        case words[0] === "play":
+        case words[1] === "play":
+            return doAnythingPlay(str, kodi);
+            break;
+        case words[0] === "open":
+            str = str.replace("open ","");
+            return showWindow(kodi, str);
             break;
         default:
     }
